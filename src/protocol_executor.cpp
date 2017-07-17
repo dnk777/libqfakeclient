@@ -35,6 +35,8 @@ GenericClientProtocolExecutor::GenericClientProtocolExecutor( Client *client_,
 
 	typedef GenericClientProtocolExecutor GPTE;
 
+	// Register persistent server commands
+
 	serverCommandHandlers.Register( "challenge", &GPTE::ServerCommand_Challenge );
 	serverCommandHandlers.Register( "client_connect", &GPTE::ServerCommand_ClientConnect );
 	serverCommandHandlers.Register( "cs", &GPTE::ServerCommand_Cs );
@@ -71,13 +73,15 @@ GenericClientProtocolExecutor::GenericClientProtocolExecutor( Client *client_,
 	serverCommandHandlers.Register( "aw", nullptr );
 	serverCommandHandlers.Register( "qm", nullptr );
 
+	serverCommandHandlers.NewGenerationTag();
+
 	serverCommandHandlers.Register( "dstart", nullptr );
 	serverCommandHandlers.Register( "dstop", nullptr );
 	serverCommandHandlers.Register( "dcancel", nullptr );
 	serverCommandHandlers.Register( "cpc", nullptr );
 	serverCommandHandlers.Register( "cpa", nullptr );
 
-	serverCommandHandlers.NewGenerationTag();
+	// Register persistent client commands
 
 	clientCommandHandlers.Register( "connect", &GPTE::Command_Connect );
 	clientCommandHandlers.Register( "disconnect", &GPTE::Command_Disconnect );
@@ -399,7 +403,7 @@ void CommandHandlersRegistry::Clear( unsigned tag ) {
 
 	// TODO: Start from the last?
 	while( i < numHandlers ) {
-		if( handlers[i].tag == tag ) {
+		if( handlers[i].tag >= tag ) {
 			handlers[i] = handlers[numHandlers - 1];
 			numHandlers--;
 		} else {
