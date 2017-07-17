@@ -353,40 +353,110 @@ void GenericClientProtocolExecutor::ExecuteCommandFromClient( const char *comman
 	clientCommandHandlers.HandleCommand( commandParser );
 }
 
+CommandHandlersRegistry::CommandHandlersRegistry( GenericClientProtocolExecutor *executor_, const char *tag_ )
+	: executor( executor_ ), tag( tag_ ), currGenerationTag( 0 ) {
+
+	for( unsigned i = 0; i < MAX_HANDLERS; ++i ) {
+		HashEntry *entry = &entriesData[i];
+		entry->name = nullptr;
+		entry->nextInFreeList = (int8_t)( i + 1 );
+	}
+
+	entriesData[MAX_HANDLERS - 1].nextInFreeList = -1;
+
+	firstFreeEntry = 0;
+	firstUsedEntry = -1;
+
+	memset( hashTable, -1, sizeof( hashTable ) );
+}
+
 void CommandHandlersRegistry::Register( const char *name, CommandHandler handler ) {
-	// Try find an existing command with the same name.
-	for( unsigned i = 0; i < numHandlers; ++i ) {
-		if( !strcmp( handlers[i].name, name ) ) {
-			handlers[numHandlers].handler = handler;
-			return;
+
+	unsigned length;
+	const uint32_t hash = GetStringHashAndLength( name, &length );
+
+	if( length > std::numeric_limits<int8_t>::max() ) {
+		executor->console->Printf( "CommandHandlersRegistry::Register(): Command name is too long\n" );
+		abort();
+	}
+
+	const uint32_t hashBinIndex = hash % HASH_TABLE_SIZE;
+
+	// Check whether a command with this name exists.
+	// We treat an attempt to register a command repeatedly as an error
+	// because it is not obvious what tag to use, and it might lead to misuse bugs.
+	if( hashTable[hashBinIndex] >= 0 ) {
+		HashEntry *entry = &entriesData[hashTable[hashBinIndex]];
+
+		for( ;; ) {
+			if( entry->nameHash == hash && entry->nameLength == length ) {
+				if( !strcmp( entry->name, name ) ) {
+					if( !handler || !entry->handler ) {
+						// Just set the new handler in this case.
+						// It is intended to be used for toggling a command handling on/off
+						// while keeping the command registered.
+						entry->handler = handler;
+					} else {
+						// If both handlers are non-null, it is not obvious what numeric tag to use
+						const char *format = "%s: a non-null handler for command `%s` has been already registered\n";
+						executor->console->Printf( format, "CommandHandlersRegistry::Register()", name );
+						abort();
+					}
+				}
+			}
+
+			if( entry->nextInHashBin < 0 ) {
+				break;
+			}
+			entry = &entriesData[entry->nextInHashBin];
 		}
 	}
 
-	if( numHandlers == MAX_HANDLERS ) {
-		executor->console->Printf( "CommandsHandlerRegistry::Register(): Too many command handlers\n" );
-		return;
+	if( firstFreeEntry < 0 ) {
+		executor->console->Printf( "CommandHandlersRegistry::Register(): Too many command handlers\n" );
+		abort();
 	}
 
-	handlers[numHandlers].name = name;
-	handlers[numHandlers].handler = handler;
-	numHandlers++;
+	const int8_t newEntryIndex = firstFreeEntry;
+	HashEntry *newEntry = &entriesData[firstFreeEntry];
+	// Fill the new entry
+	newEntry->name = name;
+	newEntry->nameHash = hash;
+	newEntry->nameLength = (uint8_t)length;
+	newEntry->handler = handler;
+	newEntry->tag = currGenerationTag;
+
+	// Unlink from free list
+	firstFreeEntry = newEntry->nextInFreeList;
+	newEntry->nextInFreeList = -1;
+
+	// Link to used list
+	newEntry->nextInUsedList = firstUsedEntry;
+	newEntry->prevInUsedList = -1;
+
+	if( firstUsedEntry >= 0 ) {
+		entriesData[firstUsedEntry].prevInUsedList = newEntryIndex;
+	}
+	firstUsedEntry = newEntryIndex;
+
+	// Link to hash bin
+	if( hashTable[hashBinIndex] >= 0 ) {
+		HashEntry *firstBinEntry = &entriesData[hashTable[hashBinIndex]];
+		firstBinEntry->prevInHashBin = newEntryIndex;
+	}
+	newEntry->nextInHashBin = hashTable[hashBinIndex];
+	newEntry->prevInHashBin = -1;
+	hashTable[hashBinIndex] = newEntryIndex;
 }
 
 bool CommandHandlersRegistry::HandleCommand( CommandParser &parser ) {
-	const char *commandName = parser.GetCommand();
+	unsigned length;
+	uint32_t hash;
+	const char *commandName = parser.GetCommand( &length, &hash );
 
 	if( !commandName ) {
 		executor->console->Printf( "%s: no command has been supplied\n", tag );
 		return false;
-	}
-
-	for( unsigned i = 0; i < numHandlers; ++i ) {
-		if( !strcmp( commandName, handlers[i].name ) ) {
-			if( handlers[i].handler ) {
-				( executor->*handlers[i].handler )( parser );
-			}
-			return true;
-		}
 	}
 
 	// An empty command
@@ -394,21 +464,89 @@ bool CommandHandlersRegistry::HandleCommand( CommandParser &parser ) {
 		return true;
 	}
 
+	const uint32_t hashBinIndex = hash % HASH_TABLE_SIZE;
+
+	if( hashTable[hashBinIndex] >= 0 ) {
+		HashEntry *entry = &entriesData[hashTable[hashBinIndex]];
+
+		for(;; ) {
+			if( entry->nameHash == hash && entry->nameLength == length ) {
+				if( !strcmp( entry->name, commandName ) ) {
+					if( entry->handler ) {
+						( executor->*( entry->handler ) )( parser );
+					}
+					return true;
+				}
+			}
+
+			if( entry->nextInHashBin < 0 ) {
+				break;
+			}
+			entry = &entriesData[entry->nextInHashBin];
+		}
+	}
+
 	executor->console->Printf( "%s: unknown command %s\n", tag, commandName );
 	return false;
 }
 
 void CommandHandlersRegistry::Clear( unsigned tag ) {
-	unsigned i = 0;
+	if( firstUsedEntry < 0 ) {
+		return;
+	}
 
-	// TODO: Start from the last?
-	while( i < numHandlers ) {
-		if( handlers[i].tag >= tag ) {
-			handlers[i] = handlers[numHandlers - 1];
-			numHandlers--;
-		} else {
-			i++;
+	HashEntry *entry = &entriesData[firstUsedEntry];
+
+	for(;; ) {
+		if( entry->tag < tag ) {
+			if( entry->nextInUsedList < 0 ) {
+				break;
+			}
+			entry = &entriesData[entry->nextInUsedList];
+			continue;
 		}
+
+		const int8_t indexOfNextUsed = entry->nextInUsedList;
+
+		// Unlink the entry from used list
+		if( entry->nextInUsedList >= 0 ) {
+			entriesData[entry->nextInUsedList].prevInUsedList = entry->prevInUsedList;
+		}
+
+		if( entry->prevInUsedList >= 0 ) {
+			entriesData[entry->prevInUsedList].nextInUsedList = entry->nextInUsedList;
+		} else {
+			assert( entry == &entriesData[firstUsedEntry] );
+			firstUsedEntry = entry->nextInUsedList;
+		}
+
+		entry->nextInUsedList = -1;
+		entry->prevInUsedList = -1;
+
+		// Unlink the entry from hash bin
+		if( entry->nextInHashBin >= 0 ) {
+			entriesData[entry->nextInHashBin].prevInHashBin = entry->prevInHashBin;
+		}
+
+		if( entry->prevInHashBin >= 0 ) {
+			entriesData[entry->prevInHashBin].nextInHashBin = entry->nextInHashBin;
+		} else {
+			uint32_t hashBinIndex = entry->nameHash % HASH_TABLE_SIZE;
+			assert( entry == &entriesData[hashTable[hashBinIndex]] );
+			hashTable[hashBinIndex] = entry->nextInHashBin;
+		}
+
+		entry->nextInHashBin = -1;
+		entry->nextInHashBin = -1;
+
+		// Link to the free list
+		entry->nextInFreeList = firstFreeEntry;
+		firstFreeEntry = (int8_t)( entry - entriesData );
+
+		if( indexOfNextUsed < 0 ) {
+			break;
+		}
+		entry = &entriesData[indexOfNextUsed];
 	}
 }
 

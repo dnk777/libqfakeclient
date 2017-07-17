@@ -1,6 +1,7 @@
 #ifndef LIBQFAKECLIENT_PROTOCOL_EXECUTOR_H
 #define LIBQFAKECLIENT_PROTOCOL_EXECUTOR_H
 
+#include <limits>
 #include "network_address.h"
 #include "command_buffer.h"
 
@@ -59,20 +60,36 @@ private:
 	const char *tag;
 
 	static constexpr auto MAX_HANDLERS = 48;
+	static_assert( MAX_HANDLERS <= std::numeric_limits<int8_t>::max(), "Cannot use a int8_t for an entry index\n" );
 
-	// TODO: Use hashing by name
-	struct {
+	// We use indices instead of pointers to save some memory.
+	// Negative indices are meant to be treated as "null" ones.
+
+	struct HashEntry {
 		const char *name;
 		CommandHandler handler;
 		uint32_t tag;
-	} handlers[MAX_HANDLERS];
-	unsigned numHandlers;
+		uint32_t nameHash;
+		uint8_t nameLength;
+		int8_t prevInHashBin;
+		int8_t nextInHashBin;
+		int8_t nextInFreeList;
+		int8_t nextInUsedList;
+		int8_t prevInUsedList;
+	};
+
+	HashEntry entriesData[MAX_HANDLERS];
+
+	int8_t firstFreeEntry;
+	int8_t firstUsedEntry;
+
+	static constexpr auto HASH_TABLE_SIZE = 89; // A prime number
+	int8_t hashTable[HASH_TABLE_SIZE];
 
 	uint32_t currGenerationTag;
 
 public:
-	CommandHandlersRegistry( GenericClientProtocolExecutor *executor_, const char *tag_ )
-		: executor( executor_ ), tag( tag_ ), numHandlers( 0 ),  currGenerationTag( 0 ) {}
+	CommandHandlersRegistry( GenericClientProtocolExecutor *executor_, const char *tag_ );
 
 	// Looks like there is no covariance in pointers to methods,
 	// so GenericClientProtocolExecutor methods are not compatible with AbstractClientProtocolExecutor ones
