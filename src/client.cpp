@@ -12,6 +12,8 @@ Client::Client( Console *console_, System *system_ )
 }
 
 void Client::Reset() {
+	CheckThread( "Client::Reset()" );
+
 	if( protocolExecutor ) {
 		DetachExecutor();
 		GenericClientProtocolExecutor::Delete( protocolExecutor );
@@ -20,6 +22,18 @@ void Client::Reset() {
 
 	oldProtocolVersion = protocolVersion;
 	protocolVersion = PROTOCOL21;
+}
+
+void Client::CheckThread( const char *function ) {
+	this->system->CheckThread( function );
+}
+
+void Client::Frame() {
+	CheckThread( "Client::Frame()" );
+
+	if( protocolExecutor ) {
+		protocolExecutor->Frame();
+	}
 }
 
 void Client::DetachExecutor() {
@@ -46,6 +60,8 @@ void Client::AttachExecutor() {
 }
 
 void Client::ExecuteCommand( const char *command ) {
+	CheckThread( "Client::ExecuteCommand()" );
+
 	if( CheckExecutor() ) {
 		protocolExecutor->ExecuteCommandFromClient( command );
 	}

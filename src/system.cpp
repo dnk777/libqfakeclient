@@ -4,6 +4,9 @@
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
+
+#include <mutex>
+#include <thread>
 #include <new>
 
 #ifndef _WIN32
@@ -13,12 +16,15 @@
 #error There is no Windows-compatible version yet
 #endif
 
-System *System::globalSystem = nullptr;
+static std::mutex globalSystemMutex;
+static std::atomic<System *> globalSystem;
 
 // Use this type to ensure the buffer is at least 8-byte aligned without using unportable attributes
 static uint64_t globalSystemBuffer[sizeof( System ) / sizeof( uint64_t ) + 1];
 
 Client *System::NewClient( Console *console ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
 	for( unsigned i = 0; i < MAX_FAKE_CLIENT_INSTANCES; ++i ) {
 		if( !clients[i] ) {
 			if( void *mem = malloc( sizeof( Client ) ) ) {
@@ -34,6 +40,8 @@ Client *System::NewClient( Console *console ) {
 }
 
 void System::DeleteClient( Client *client ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
 	if( !client ) {
 		console->Printf( "System::DeleteClient(): the argument is null, the call is ignored\n" );
 		return;
@@ -52,20 +60,45 @@ void System::DeleteClient( Client *client ) {
 }
 
 void System::Init( Console *systemConsole ) {
-	if( globalSystem ) {
-		return;
-	}
+	System *system = globalSystem.load( std::memory_order_acquire );
 
-	globalSystem = new (globalSystemBuffer)System( systemConsole );
+	if( !system ) {
+		std::lock_guard<std::mutex> lock( globalSystemMutex );
+		system = globalSystem.load( std::memory_order_relaxed );
+
+		if( !system ) {
+			system = new(globalSystemBuffer)System( systemConsole );
+			globalSystem.store( system, std::memory_order_release );
+		}
+	}
 }
 
 void System::Shutdown() {
-	if( !globalSystem ) {
-		return;
-	}
+	System *system = globalSystem.load( std::memory_order_acquire );
 
-	globalSystem->~System();
-	globalSystem = nullptr;
+	if( system ) {
+		std::lock_guard<std::mutex> lock( globalSystemMutex );
+		system = globalSystem.load( std::memory_order_relaxed );
+
+		if( system ) {
+			system->~System();
+			globalSystem.store( nullptr, std::memory_order_release );
+		}
+	}
+}
+
+System *System::Instance() {
+	System *system = globalSystem.load( std::memory_order_acquire );
+
+	if( !system ) {
+		std::lock_guard<std::mutex> lock( globalSystemMutex );
+		system = globalSystem.load( std::memory_order_relaxed );
+
+		if( !system ) {
+			abort();
+		}
+	}
+	return system;
 }
 
 System::System( Console *systemConsole ) {
@@ -77,6 +110,8 @@ System::System( Console *systemConsole ) {
 	this->timestamp = timestamp;
 	clock_gettime( CLOCK_MONOTONIC, timestamp );
 #endif
+
+	pinnedToThreadId = std::thread::id();
 
 	// Ensure that the memory is zeroed before first use
 	memset( clients, 0, MAX_FAKE_CLIENT_INSTANCES * sizeof( clients[0] ) );
@@ -100,8 +135,19 @@ void System::Sleep( unsigned millis ) {
 #endif
 }
 
+void System::CheckThread( const char *function ) {
+	if( this->pinnedToThreadId == std::this_thread::get_id() ) {
+		return;
+	}
+	console->Printf( "%s: Attempt to use the System instance from different threads has been detected\n", function );
+	abort();
+}
+
 bool System::AddListenedSocket( Socket *socket, void *owner, uint8_t *buffer, unsigned bufferSize,
 								void ( *callback )( void *, const NetworkAddress &, unsigned ) ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	CheckThread( "System::AddListenedSocket()" );
+
 	if( numListenedSockets == MAX_SOCKETS ) {
 		console->Printf( "Can't add a listened socket: too many sockets\n" );
 		return false;
@@ -125,6 +171,9 @@ bool System::AddListenedSocket( Socket *socket, void *owner, uint8_t *buffer, un
 }
 
 bool System::RemoveListenedSocket( Socket *socket ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	CheckThread( "System::RemoveListenedSocket()" );
+
 	for( unsigned i = 0; i < numListenedSockets; ++i ) {
 		if( listenedSockets[i].socket == socket ) {
 			// Replace by the last one
@@ -139,6 +188,17 @@ bool System::RemoveListenedSocket( Socket *socket ) {
 }
 
 void System::Frame( unsigned maxMillis ) {
+	auto threadId = std::this_thread::get_id();
+
+	if( this->pinnedToThreadId != threadId ) {
+		// If the system has been already pinned to a thread
+		if( this->pinnedToThreadId != std::thread::id() ) {
+			// This call always fails in this case.
+			CheckThread( "System::Frame()" );
+		}
+		this->pinnedToThreadId = threadId;
+	}
+
 	TimeFrame( maxMillis );
 	NetPollFrame( maxMillis );
 	ClientsFrame( maxMillis );

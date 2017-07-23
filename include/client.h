@@ -49,16 +49,12 @@ class Client
 
 	void PrintMissingListenerWarning( const char *function );
 
+	void CheckThread( const char *function );
+
 public:
 	void ExecuteCommand( const char *command );
-
 	void Reset();
-
-	void Frame() {
-		if( protocolExecutor ) {
-			protocolExecutor->Frame();
-		}
-	}
+	void Frame();
 
 	// Resolve a name clash by adding a getter prefix
 	Console *GetConsole() { return console; }
