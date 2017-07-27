@@ -6,6 +6,8 @@
 class Console
 {
 public:
+	virtual ~Console() {}
+
 #ifndef _MSC_VER
 	virtual void Printf( const char *format, ... ) __attribute__( ( format( printf, 2, 3 ) ) );
 #else

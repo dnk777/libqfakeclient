@@ -39,9 +39,7 @@ class Client
 
 	Client( Console *console_, System *system_ );
 
-	~Client() {
-		Reset();
-	}
+	~Client();
 
 	bool CheckExecutor();
 	void AttachExecutor();

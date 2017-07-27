@@ -127,6 +127,11 @@ System::~System() {
 		free( clients[i] );
 		clients[i] = nullptr;
 	}
+
+	if( console ) {
+		console->~Console();
+		free( console );
+	}
 }
 
 void System::Sleep( unsigned millis ) {

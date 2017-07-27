@@ -11,6 +11,20 @@ Client::Client( Console *console_, System *system_ )
 	password[0] = 0;
 }
 
+Client::~Client() {
+	Reset();
+
+	if( listener ) {
+		listener->~ClientListener();
+		free( listener );
+	}
+
+	if( console ) {
+		console->~Console();
+		free( console );
+	}
+}
+
 void Client::Reset() {
 	CheckThread( "Client::Reset()" );
 

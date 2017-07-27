@@ -18,12 +18,12 @@ public:
 };
 
 int main( int argc, const char **argv ) {
-	TaggedConsole globalConsole( "System" );
-	TaggedConsole clientConsole( "Client" );
+	auto *globalConsole = new( malloc( sizeof( TaggedConsole ) ) )TaggedConsole( "System" );
+	auto *clientConsole = new( malloc( sizeof( TaggedConsole ) ) )TaggedConsole( "Client" );
 
-	System::Init( &globalConsole );
+	System::Init( globalConsole );
 	System *system = System::Instance();
-	Client *client = system->NewClient( &clientConsole );
+	Client *client = system->NewClient( clientConsole );
 
 	client->ExecuteCommand( "connect 127.0.0.1" );
 
