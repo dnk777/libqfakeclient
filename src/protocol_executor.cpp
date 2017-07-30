@@ -85,6 +85,9 @@ GenericClientProtocolExecutor::GenericClientProtocolExecutor( Client *client_,
 
 	clientCommandHandlers.Register( "connect", &GPTE::Command_Connect );
 	clientCommandHandlers.Register( "disconnect", &GPTE::Command_Disconnect );
+#ifndef PUBLIC_BUILD
+    clientCommandHandlers.Register( "test_listener", &GPTE::Command_TestListener );
+#endif
 
 	clientCommandHandlers.NewGenerationTag();
 
@@ -170,6 +173,17 @@ void GenericClientProtocolExecutor::DoDisconnectRequest() {
 	}
 	SetState( CA_DISCONNECTED );
 }
+
+#ifndef PUBLIC_BUILD
+void GenericClientProtocolExecutor::Command_TestListener( CommandParser &parser ) {
+	client->SetShownPlayerName( "Player" );
+	client->SetMessageOfTheDay( "Message of the day" );
+	client->PrintCenteredMessage( "King of Bongo!" );
+	client->PrintChatMessage( "Player(1)", "Hello, world!" );
+	client->PrintTeamChatMessage( "Player(1)", "Hello, world!" );
+	client->PrintTVChatMessage( "Player(1)", "Hello, world!" );
+}
+#endif
 
 GenericClientProtocolExecutor *GenericClientProtocolExecutor::New( Console *console, Client *client, System *system, int protocolVersion ) {
 	if( protocolVersion != PROTOCOL21 ) {

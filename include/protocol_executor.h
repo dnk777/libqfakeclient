@@ -174,6 +174,10 @@ protected:
 	void DoConnectRequest();
 	void DoDisconnectRequest();
 
+#ifndef PUBLIC_BUILD
+    void Command_TestListener( CommandParser &parser );
+#endif
+
 	void Send() {
 		channel.Send();
 		lastSentAt = Millis();
