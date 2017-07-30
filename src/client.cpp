@@ -85,6 +85,14 @@ void Client::PrintMissingListenerWarning( const char *function ) {
 	console->Printf( "Warning: %s: client listener is not set\n", function );
 }
 
+void Client::SetListener( ClientListener *listener_ ) {
+	if( this->listener ) {
+		this->listener->~ClientListener();
+		free( this->listener );
+	}
+	this->listener = listener_;
+}
+
 void Client::SetShownPlayerName( const char *name ) {
 	if( listener ) {
 		listener->SetShownPlayerName( name );

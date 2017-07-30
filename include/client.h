@@ -58,9 +58,7 @@ public:
 	Console *GetConsole() { return console; }
 	System *GetSystem() { return system; }
 
-	void SetListener( ClientListener *listener_ ) {
-		this->listener = listener_;
-	}
+	void SetListener( ClientListener *listener_ );
 
 	void SetShownPlayerName( const char *name );
 	void SetMessageOfTheDay( const char *motd );
