@@ -5,6 +5,7 @@
 #include "message_parser.h"
 #include "network_address.h"
 #include "protocol_executor.h"
+#include <stdlib.h>
 
 class ClientListener
 {
