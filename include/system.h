@@ -121,7 +121,7 @@ public:
 	/**
 	 * Fails using abort() if the caller is not being executed in the thread
 	 * the system is pinned to by a first Frame() call.
-	 * There is an assumption that at least a single Frame() call has been executed first.
+	 * Skips the current thread testing if the system is not pinned to a thread yet.
 	 */
 	void CheckThread( const char *function );
 };

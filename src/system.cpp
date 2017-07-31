@@ -141,6 +141,10 @@ void System::Sleep( unsigned millis ) {
 }
 
 void System::CheckThread( const char *function ) {
+    if( this->pinnedToThreadId == std::thread::id() ) {
+        console->Printf( "Warning: System::CheckThread(%s): the system hasn't been pinned to a thread yet\n", function );
+		return;
+    }
 	if( this->pinnedToThreadId == std::this_thread::get_id() ) {
 		return;
 	}
