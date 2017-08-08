@@ -38,6 +38,19 @@ public:
 		Clear();
 	}
 
+	void SetFromIpV4Data( const uint8_t *addressBytes, const uint8_t *portBytes ) {
+		memset( &u.in4, 0, sizeof( u.in4 ) );
+		memcpy( &u.in4.sin_addr, addressBytes, 4 );
+		memcpy( &u.in4.sin_port, portBytes, 2 );
+		u.in4.sin_family = AF_INET;
+	}
+	void SetFromIpV6Data( const uint8_t *addressBytes, const uint8_t *portBytes ) {
+		memset( &u.in6, 0, sizeof( u.in6 ) );
+		memcpy( &u.in6.sin6_addr, addressBytes, 16 );
+		memcpy( &u.in6.sin6_port, portBytes, 2 );
+		u.in6.sin6_family = AF_INET6;
+	}
+
 	bool IsIpV4Address() const { return Family() == AF_INET; }
 	bool IsIpV6Address() const { return Family() == AF_INET6; }
 
@@ -75,6 +88,51 @@ public:
 	void Clear() {
 		memset( this, 0, sizeof( NetworkAddress ) );
 		u.in4.sin_family = AF_UNSPEC;
+	}
+
+	uint32_t Hash() const {
+		if( this->Family() == AF_INET ) {
+			return HashForIpV4Data( (uint8_t *)&u.in4.sin_addr.s_addr, (uint8_t *)&u.in4.sin_port );
+		}
+
+		if( this->Family() == AF_INET6 ) {
+			return HashForIpV6Data( (uint8_t *)&u.in6.sin6_addr, (uint8_t *)&u.in6.sin6_port );
+		}
+		return 0;
+	}
+
+	static uint32_t HashForIpV4Data( const uint8_t *addressData, const uint8_t *portData ) {
+		const uint8_t *data = addressData;
+		uint32_t result = ~( 0u ^ ( portData[0] | ( portData[1] << 24 ) ) );
+
+		result = result * 17 + ( ( data[0] << 24 ) | ( data[1] << 16 ) | ( data[2] << 8 ) | data[0] );
+		return result;
+	}
+
+	static uint32_t HashForIpV6Data( const uint8_t *addressData, const uint8_t *portData ) {
+		uint32_t result = ~( 0u  ^ ( portData[0] | ( portData[1] << 24 ) ) );
+		const uint8_t *data = addressData;
+
+		// Not sure about alignment of IP v6 data
+		for( unsigned i = 0; i < 16; i += 4 ) {
+			result *= 17;
+			result += ( ( data[i + 0] << 24 ) | ( data[i + 1] << 16 ) | ( data[i + 2] << 8 ) | data[i + 3] );
+		}
+		return result;
+	}
+
+	bool MatchesIpV4Data( const uint8_t *addressData, const uint8_t *portData ) const {
+		if( !IsIpV4Address() ) {
+			return false;
+		}
+		return !memcmp( &u.in4.sin_addr.s_addr, addressData, 4 ) && !memcmp( &u.in4.sin_port, portData, 2 );
+	}
+
+	bool MatchesIpV6Data( const uint8_t *addressData, const uint8_t *portData ) const {
+		if( !IsIpV6Address() ) {
+			return false;
+		}
+		return !memcmp( &u.in6.sin6_addr, addressData, 16 ) && !memcmp( &u.in6.sin6_port, portData, 2 );
 	}
 };
 

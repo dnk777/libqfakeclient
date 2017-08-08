@@ -1,5 +1,6 @@
 #include "system.h"
 #include "client.h"
+#include "server_list.h"
 
 #include <assert.h>
 #include <string.h>
@@ -115,6 +116,8 @@ System::System( Console *systemConsole ) {
 
 	// Ensure that the memory is zeroed before first use
 	memset( clients, 0, MAX_FAKE_CLIENT_INSTANCES * sizeof( clients[0] ) );
+
+	serverList = nullptr;
 }
 
 System::~System() {
@@ -132,6 +135,11 @@ System::~System() {
 		console->~Console();
 		free( console );
 	}
+
+	if( serverList ) {
+		serverList->~ServerList();
+		free( serverList );
+	}
 }
 
 void System::Sleep( unsigned millis ) {
@@ -141,13 +149,15 @@ void System::Sleep( unsigned millis ) {
 }
 
 void System::CheckThread( const char *function ) {
-    if( this->pinnedToThreadId == std::thread::id() ) {
-        console->Printf( "Warning: System::CheckThread(%s): the system hasn't been pinned to a thread yet\n", function );
-		return;
-    }
 	if( this->pinnedToThreadId == std::this_thread::get_id() ) {
 		return;
 	}
+
+	if( this->pinnedToThreadId == std::thread::id() ) {
+		console->Printf( "Warning: System::CheckThread(%s): the system hasn't been pinned to a thread yet\n", function );
+		return;
+	}
+
 	console->Printf( "%s: Attempt to use the System instance from different threads has been detected\n", function );
 	abort();
 }
@@ -211,6 +221,10 @@ void System::Frame( unsigned maxMillis ) {
 	TimeFrame( maxMillis );
 	NetPollFrame( maxMillis );
 	ClientsFrame( maxMillis );
+
+	if( serverList ) {
+		serverList->Frame();
+	}
 }
 
 void System::TimeFrame( unsigned maxMillis ) {
@@ -230,5 +244,145 @@ void System::ClientsFrame( unsigned maxMillis ) {
 		if( client ) {
 			client->Frame();
 		}
+	}
+}
+
+bool System::AddMasterServer( const NetworkAddress &address ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
+	if( numMasterServers == MAX_MASTER_SERVERS ) {
+		return false;
+	}
+
+	for( unsigned i = 0; i < numMasterServers; ++i ) {
+		if( masterServers[i] == address ) {
+			return false;
+		}
+	}
+
+	masterServers[numMasterServers++] = address;
+	return true;
+}
+
+bool System::RemoveMasterServer( const NetworkAddress &address ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
+	for( unsigned i = 0; i < numMasterServers; ++i ) {
+		if( masterServers[i] == address ) {
+			masterServers[i] = masterServers[--numMasterServers];
+			return true;
+		}
+	}
+
+	return false;
+}
+
+bool System::IsMasterServer( const NetworkAddress &address ) const {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
+	for( unsigned i = 0; i < numMasterServers; ++i ) {
+		if( masterServers[i] == address ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+struct SocketHolder {
+	System *system;
+	Socket *socket;
+	SocketHolder( System *system_, Socket *socket_ ) : system( system_ ), socket( socket_ ) {}
+	~SocketHolder() {
+		if( this->socket ) {
+			system->DeleteSocket( this->socket );
+		}
+	}
+	Socket *Get() { return socket; }
+	operator bool() {
+		return socket != nullptr;
+	}
+	Socket *ReleaseOwnership() {
+		Socket *result = this->socket;
+
+		this->socket = nullptr;
+		return result;
+	}
+};
+
+bool System::StartUpdatingServerList( ServerListListener *listener ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
+	if( !listener ) {
+		console->Printf( "System::StartUpdatingServerList(): The listener is null\n" );
+		abort();
+	}
+
+	if( serverList ) {
+		console->Printf( "System::StartUpdatingServerList(): Server list updated has been already enabled\n" );
+		abort();
+	}
+
+	SocketHolder ipV4SocketHolder( this, NewSocket( true ) );
+
+	if( !ipV4SocketHolder ) {
+		return false;
+	}
+	SocketHolder ipV6SocketHolder( this, NewSocket( false ) );
+
+	if( !ipV6SocketHolder ) {
+		return false;
+	}
+
+	void *mem = malloc( sizeof( ServerList ) );
+
+	if( !mem ) {
+		console->Printf( "System::StartUpdatingServerList(): Can't allocate a memory for a server list\n" );
+		return false;
+	}
+
+	Socket *ipV4Socket = ipV4SocketHolder.ReleaseOwnership();
+	Socket *ipV6Socket = ipV6SocketHolder.ReleaseOwnership();
+	this->serverList = new( mem )ServerList( this, ipV4Socket, ipV6Socket, PROTOCOL21, listener );
+
+	for( Socket *socket: { ipV4Socket, ipV6Socket } ) {
+		uint8_t *buffer = this->serverList->SocketBuffer();
+		unsigned bufferSize = this->serverList->BufferSize();
+		assert( bufferSize > 1024 );
+
+		if( !this->AddListenedSocket( socket, serverList, buffer, bufferSize, &ServerList::SocketCallback ) ) {
+			this->serverList->~ServerList();
+			free( this->serverList );
+			this->serverList = nullptr;
+			return false;
+		}
+	}
+
+	serverList->SetOptions( pendingShowEmptyServersOption, pendingShowPlayerInfoOption );
+	return true;
+}
+
+void System::StopUpdatingServerList() {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
+	if( !serverList ) {
+		return;
+	}
+
+	serverList->~ServerList();
+	free( serverList );
+	serverList = nullptr;
+}
+
+void System::SetServerListUpdateOptions( bool showEmptyServers, bool showPlayerInfo ) {
+	std::lock_guard<std::mutex> lock( globalSystemMutex );
+
+	// Keep duplicates of the options in all cases.
+	// (Prevent losing options after StopUpdatingServerList()) calls
+	pendingShowEmptyServersOption = showEmptyServers;
+	pendingShowPlayerInfoOption = showPlayerInfo;
+
+	if( serverList ) {
+		serverList->SetOptions( showEmptyServers, showPlayerInfo );
 	}
 }

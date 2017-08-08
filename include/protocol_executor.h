@@ -175,7 +175,7 @@ protected:
 	void DoDisconnectRequest();
 
 #ifndef PUBLIC_BUILD
-    void Command_TestListener( CommandParser &parser );
+	void Command_TestListener( CommandParser &parser );
 #endif
 
 	void Send() {

@@ -14,6 +14,7 @@ class Message
 {
 	friend class Channel;
 	friend class CommandBuffer;
+	friend class ServerList;
 
 	Console *console;
 
@@ -24,25 +25,21 @@ class Message
 	unsigned maxSize;
 	unsigned currSize;
 	unsigned readCount;
-	unsigned sequenceNum;
 
 public:
 	Message() {
 		console = System::Instance()->SystemConsole();
+		Clear();
 	}
 
 	unsigned CurrSize() const { return currSize; }
+	unsigned MaxSize() const { return maxSize; }
 	unsigned ReadCount() const { return readCount; }
 	unsigned BytesLeft() const {
 		return readCount <= currSize ? currSize - readCount : 0;
 	}
 	void SetReadCount( unsigned readCount_ ) { this->readCount = readCount_; }
 	inline uint8_t *Buffer() { return buffer; }
-
-	bool IsSequential() {
-		// An integer containing the fragment bit is never a valid sequence num
-		return !( sequenceNum & FRAGMENT_BIT );
-	}
 
 	void Clear() {
 		maxSize = MAX_MSGLEN;

@@ -25,6 +25,7 @@ set(SOURCE_FILES
     include/message_parser.h
     include/network_address.h
     include/protocol_executor.h
+    include/server_list.h
     include/socket.h
     include/system.h
     src/channel.cpp
@@ -35,6 +36,7 @@ set(SOURCE_FILES
     src/message_parser.cpp
     src/network_address.cpp
     src/protocol_executor.cpp
+    src/server_list.cpp
     src/socket.cpp
     src/system.cpp)
 

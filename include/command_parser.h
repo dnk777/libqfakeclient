@@ -21,6 +21,10 @@ public:
 	const char *GetArg( unsigned *tokenLength = nullptr, uint32_t *tokenHash = nullptr );
 };
 
+inline void AddCharToHash( uint32_t *hash, char c ) {
+	*hash = *hash * 31 + ( ( c << 24 ) ^ ~0 ) + c;
+}
+
 uint32_t GetStringHashAndLength( const char *s, unsigned *length = nullptr );
 uint32_t GetStringHashForGivenLength( const char *s, unsigned length );
 

@@ -4,10 +4,6 @@
 #include <string.h>
 #include <algorithm>
 
-static inline void AddCharToHash( uint32_t *hash, char c ) {
-	*hash = *hash * 31 + ( ( c << 24 ) ^ ~0 ) + c;
-}
-
 template <typename T1, typename T2>
 static inline size_t MinSize( T1 a, T2 b ) {
 	return std::min( (size_t)a, (size_t)b );

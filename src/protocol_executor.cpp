@@ -86,7 +86,7 @@ GenericClientProtocolExecutor::GenericClientProtocolExecutor( Client *client_,
 	clientCommandHandlers.Register( "connect", &GPTE::Command_Connect );
 	clientCommandHandlers.Register( "disconnect", &GPTE::Command_Disconnect );
 #ifndef PUBLIC_BUILD
-    clientCommandHandlers.Register( "test_listener", &GPTE::Command_TestListener );
+	clientCommandHandlers.Register( "test_listener", &GPTE::Command_TestListener );
 #endif
 
 	clientCommandHandlers.NewGenerationTag();
