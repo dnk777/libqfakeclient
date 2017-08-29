@@ -17,14 +17,16 @@
 #error There is no Windows-compatible version yet
 #endif
 
-static std::mutex globalSystemMutex;
+static std::recursive_mutex globalSystemMutex;
+typedef std::lock_guard<std::recursive_mutex> SystemMutexLock;
+
 static std::atomic<System *> globalSystem;
 
 // Use this type to ensure the buffer is at least 8-byte aligned without using unportable attributes
 static uint64_t globalSystemBuffer[sizeof( System ) / sizeof( uint64_t ) + 1];
 
 Client *System::NewClient( Console *console ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	for( unsigned i = 0; i < MAX_FAKE_CLIENT_INSTANCES; ++i ) {
 		if( !clients[i] ) {
@@ -41,7 +43,7 @@ Client *System::NewClient( Console *console ) {
 }
 
 void System::DeleteClient( Client *client ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	if( !client ) {
 		console->Printf( "System::DeleteClient(): the argument is null, the call is ignored\n" );
@@ -64,7 +66,7 @@ void System::Init( Console *systemConsole ) {
 	System *system = globalSystem.load( std::memory_order_acquire );
 
 	if( !system ) {
-		std::lock_guard<std::mutex> lock( globalSystemMutex );
+		SystemMutexLock lock( globalSystemMutex );
 		system = globalSystem.load( std::memory_order_relaxed );
 
 		if( !system ) {
@@ -78,7 +80,7 @@ void System::Shutdown() {
 	System *system = globalSystem.load( std::memory_order_acquire );
 
 	if( system ) {
-		std::lock_guard<std::mutex> lock( globalSystemMutex );
+		SystemMutexLock lock( globalSystemMutex );
 		system = globalSystem.load( std::memory_order_relaxed );
 
 		if( system ) {
@@ -92,7 +94,7 @@ System *System::Instance() {
 	System *system = globalSystem.load( std::memory_order_acquire );
 
 	if( !system ) {
-		std::lock_guard<std::mutex> lock( globalSystemMutex );
+		SystemMutexLock lock( globalSystemMutex );
 		system = globalSystem.load( std::memory_order_relaxed );
 
 		if( !system ) {
@@ -164,7 +166,7 @@ void System::CheckThread( const char *function ) {
 
 bool System::AddListenedSocket( Socket *socket, void *owner, uint8_t *buffer, unsigned bufferSize,
 								void ( *callback )( void *, const NetworkAddress &, unsigned ) ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 	CheckThread( "System::AddListenedSocket()" );
 
 	if( numListenedSockets == MAX_SOCKETS ) {
@@ -190,7 +192,7 @@ bool System::AddListenedSocket( Socket *socket, void *owner, uint8_t *buffer, un
 }
 
 bool System::RemoveListenedSocket( Socket *socket ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 	CheckThread( "System::RemoveListenedSocket()" );
 
 	for( unsigned i = 0; i < numListenedSockets; ++i ) {
@@ -248,7 +250,7 @@ void System::ClientsFrame( unsigned maxMillis ) {
 }
 
 bool System::AddMasterServer( const NetworkAddress &address ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	if( numMasterServers == MAX_MASTER_SERVERS ) {
 		return false;
@@ -265,7 +267,7 @@ bool System::AddMasterServer( const NetworkAddress &address ) {
 }
 
 bool System::RemoveMasterServer( const NetworkAddress &address ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	for( unsigned i = 0; i < numMasterServers; ++i ) {
 		if( masterServers[i] == address ) {
@@ -278,7 +280,7 @@ bool System::RemoveMasterServer( const NetworkAddress &address ) {
 }
 
 bool System::IsMasterServer( const NetworkAddress &address ) const {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	for( unsigned i = 0; i < numMasterServers; ++i ) {
 		if( masterServers[i] == address ) {
@@ -311,7 +313,7 @@ struct SocketHolder {
 };
 
 bool System::StartUpdatingServerList( ServerListListener *listener ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	if( !listener ) {
 		console->Printf( "System::StartUpdatingServerList(): The listener is null\n" );
@@ -363,7 +365,7 @@ bool System::StartUpdatingServerList( ServerListListener *listener ) {
 }
 
 void System::StopUpdatingServerList() {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	if( !serverList ) {
 		return;
@@ -375,7 +377,7 @@ void System::StopUpdatingServerList() {
 }
 
 void System::SetServerListUpdateOptions( bool showEmptyServers, bool showPlayerInfo ) {
-	std::lock_guard<std::mutex> lock( globalSystemMutex );
+	SystemMutexLock lock( globalSystemMutex );
 
 	// Keep duplicates of the options in all cases.
 	// (Prevent losing options after StopUpdatingServerList()) calls
